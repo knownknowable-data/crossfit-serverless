@@ -1,4 +1,3 @@
-import { google } from "googleapis";
 import fetch from "node-fetch";
 
 const DIVISIONS = [
@@ -17,59 +16,31 @@ const DIVISIONS = [
 ];
 
 export async function GET() {
-  const timestamp = new Date().toISOString();
-
   try {
-    // ✅ Read env vars at runtime
-    const privateKey = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n");
-    const clientEmail = process.env.GOOGLE_CLIENT_EMAIL;
-    const spreadsheetId = process.env.SPREADSHEET_ID;
+    let total = 0;
+    const divisions = [];
 
-    if (!privateKey || !clientEmail || !spreadsheetId) {
-      throw new Error("Missing one or more Google Sheets environment variables");
-    }
-
-    // Google Sheets auth
-    const auth = new google.auth.GoogleAuth({
-      credentials: {
-        client_email: clientEmail,
-        private_key: privateKey,
-      },
-      scopes: ["https://www.googleapis.com/auth/spreadsheets"],
-    });
-    const sheets = google.sheets({ version: "v4", auth });
-
-    let grandTotal = 0;
-    const divisionValues = [];
-
-    // Fetch each division
     for (const div of DIVISIONS) {
       const res = await fetch(div.url);
       const json = await res.json();
-      const total = json.pagination?.totalCompetitors || 0;
-      grandTotal += total;
-      divisionValues.push([timestamp, div.name, total]);
+
+      // Grab the first page total
+      const divTotal = json.pagination?.totalCompetitors || 0;
+      total += divTotal;
+
+      divisions.push({ division: div.name, total: divTotal });
     }
 
-    // Append division totals + timestamp
-    await sheets.spreadsheets.values.append({
-      spreadsheetId,
-      range: "Sheet1!A:C",
-      valueInputOption: "USER_ENTERED",
-      resource: { values: divisionValues },
-    });
-
-    // Append grand total + timestamp
-    await sheets.spreadsheets.values.append({
-      spreadsheetId,
-      range: "Sheet1!D:E",
-      valueInputOption: "USER_ENTERED",
-      resource: { values: [[timestamp, grandTotal]] },
-    });
-
-    return new Response(JSON.stringify({ success: true, grandTotal, timestamp }));
+    return new Response(
+      JSON.stringify({
+        total,
+        divisions,
+        updatedAt: new Date().toISOString(),
+      }),
+      { status: 200 }
+    );
   } catch (err) {
-    console.error("Function crash:", err);
+    console.error("Error fetching divisions:", err);
     return new Response(JSON.stringify({ error: err.message }), { status: 500 });
   }
 }
